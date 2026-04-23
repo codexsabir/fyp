@@ -49,8 +49,7 @@ export default function AdminProperties() {
 					<Button variant="secondary" onClick={() => setStatus(p.id, 'rejected')}>Reject</Button>
 					<Button variant="ghost" onClick={() => setStatus(p.id, 'pending')}>Set pending</Button>
 				</div>,
-			]);
-		,
+			]),
 		[items]
 	);
 

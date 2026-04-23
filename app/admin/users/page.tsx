@@ -62,7 +62,7 @@ export default function AdminUsers() {
 					<Button variant="secondary" onClick={() => markVerified(u.id, true)}>Mark verified</Button>
 					<Button variant="ghost" onClick={() => markVerified(u.id, false)}>Mark pending</Button>
 				</div>,
-			]);
+			])
 		,
 		[items]
 	);
