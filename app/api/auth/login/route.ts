@@ -1,35 +1,34 @@
-import { connectDB } from '@/lib/mongodb';
-import UserModel from '@/models/User';
-import { jsonError, jsonOk } from '@/app/api/_utils';
-import { signJwt } from '@/lib/jwt';
+import { NextResponse } from 'next/server';
 import bcrypt from 'bcryptjs';
-
-export const runtime = 'nodejs';
-
-type Body = { email: string; password: string };
+import { connectDB } from '@/lib/mongodb';
+import { UserModel } from '@/models/User';
+import { signToken } from '@/lib/jwt';
 
 export async function POST(req: Request) {
 	try {
+		const body = await req.json();
+		const email = String(body?.email ?? '').trim().toLowerCase();
+		const password = String(body?.password ?? '');
+
+		if (!email || !password) {
+			return NextResponse.json({ success: false, message: 'Missing email or password' }, { status: 400 });
+		}
+
 		await connectDB();
-		const body = (await req.json()) as Partial<Body>;
-		const email = String(body.email ?? '').trim().toLowerCase();
-		const password = String(body.password ?? '');
-		if (!email) return jsonError('Missing field: email', 400);
-		if (!password) return jsonError('Missing field: password', 400);
 
-		const user: any = await UserModel.findOne({ email }).lean();
-		if (!user) return jsonError('Invalid credentials', 401);
+		const user = await UserModel.findOne({ email });
+		if (!user) return NextResponse.json({ success: false, message: 'Invalid login' }, { status: 401 });
 
-		const ok = await bcrypt.compare(password, String(user.passwordHash ?? ''));
-		if (!ok) return jsonError('Invalid credentials', 401);
+		const ok = await bcrypt.compare(password, user.password);
+		if (!ok) return NextResponse.json({ success: false, message: 'Invalid login' }, { status: 401 });
 
-		const token = signJwt({ id: String(user._id), email: user.email, role: user.role, name: user.name });
-		return jsonOk({
+		const token = signToken({ userId: String(user._id), role: user.role });
+		return NextResponse.json({
 			success: true,
 			token,
-			user: { id: String(user._id), name: user.name, email: user.email, role: user.role, verified: Boolean(user.verified) },
+			user: { id: String(user._id), name: user.name, email: user.email, role: user.role },
 		});
 	} catch (e: any) {
-		return jsonError(e?.message ?? 'Bad Request', 400);
+		return NextResponse.json({ success: false, message: e?.message ?? 'Login failed' }, { status: 500 });
 	}
 }

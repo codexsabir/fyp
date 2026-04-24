@@ -1,19 +1,20 @@
 import jwt from 'jsonwebtoken';
 
-const JWT_SECRET = process.env.JWT_SECRET;
-if (!JWT_SECRET) throw new Error('Missing env: JWT_SECRET');
-
-export type JwtUser = {
-	id: string;
-	email: string;
+export type JwtPayload = {
+	userId: string;
 	role: 'tenant' | 'landlord' | 'admin';
-	name: string;
 };
 
-export function signJwt(payload: JwtUser) {
-	return jwt.sign(payload, JWT_SECRET, { expiresIn: '7d' });
+function getSecret() {
+	const s = process.env.JWT_SECRET;
+	if (!s) throw new Error('Missing env: JWT_SECRET');
+	return s;
 }
 
-export function verifyJwt(token: string): JwtUser {
-	return jwt.verify(token, JWT_SECRET) as JwtUser;
+export function signToken(payload: JwtPayload) {
+	return jwt.sign(payload, getSecret(), { expiresIn: '7d' });
+}
+
+export function verifyToken(token: string): JwtPayload {
+	return jwt.verify(token, getSecret()) as JwtPayload;
 }
