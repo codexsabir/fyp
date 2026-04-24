@@ -1,12 +1,19 @@
-import { getStore } from '@/lib/store';
+import { connectDB } from '@/lib/mongodb';
+import UserModel from '@/models/User';
 import { jsonError, jsonOk } from '@/app/api/_utils';
 import { getAuthUser } from '@/app/api/auth/_auth';
 
+export const runtime = 'nodejs';
+
 export async function GET() {
-    const auth = getAuthUser();
-    if (!auth?.id) return jsonError('Unauthorized', 401);
-    const store = getStore();
-    const u: any = store.users.find((x: any) => x.id === auth.id);
-    if (!u) return jsonError('Unauthorized', 401);
-    return jsonOk({ user: { id: u.id, name: u.name, email: u.email, role: u.role, verified: Boolean(u.isVerified) } });
+	const auth = getAuthUser();
+	if (!auth?.id) return jsonError('Unauthorized', 401);
+
+	await connectDB();
+	const user: any = await UserModel.findById(auth.id).lean();
+	if (!user) return jsonError('Unauthorized', 401);
+
+	return jsonOk({
+		user: { id: String(user._id), name: user.name, email: user.email, role: user.role, verified: Boolean(user.verified) },
+	});
 }

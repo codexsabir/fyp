@@ -1,65 +1,79 @@
 import { NextResponse } from 'next/server';
-import { getStore } from '@/lib/store';
+import { connectDB } from '@/lib/mongodb';
+import PropertyModel from '@/models/Property';
+import { getAuthUser } from '@/app/api/auth/_auth';
+
+export const runtime = 'nodejs';
 
 export async function GET(req: Request) {
-	const store = getStore();
+	await connectDB();
 	const { searchParams } = new URL(req.url);
-	const q = (searchParams.get('q') ?? '').toLowerCase();
-	const city = (searchParams.get('city') ?? '').toLowerCase();
-	const status = (searchParams.get('status') ?? '').toLowerCase();
-	const role = (searchParams.get('role') ?? 'tenant').toLowerCase();
+	const q = (searchParams.get('q') ?? '').trim();
+	const city = (searchParams.get('city') ?? '').trim();
 
-	let items = [...store.properties];
+	const filter: any = {};
+	if (q) filter.$or = [{ title: { $regex: q, $options: 'i' } }, { description: { $regex: q, $options: 'i' } }];
+	if (city) filter.city = { $regex: `^${city}$`, $options: 'i' };
 
-	// tenant visibility: only approved/available
-	if (role === 'tenant') {
-		items = items.filter((p) => p.status === 'available' || p.status === 'approved');
-	}
-
-	if (q) {
-		items = items.filter((p) =>
-			[p.title, p.description, p.area, p.city, p.address].some((x) => String(x).toLowerCase().includes(q))
-		);
-	}
-	if (city) items = items.filter((p) => p.city.toLowerCase() === city);
-	if (status) items = items.filter((p) => p.status.toLowerCase() === status);
-
-	return NextResponse.json({ items });
+	const items = await PropertyModel.find(filter).sort({ createdAt: -1 }).lean();
+	return NextResponse.json({ items: items.map((p: any) => ({ ...p, id: String(p._id) })) });
 }
 
 export async function POST(req: Request) {
-	const store = getStore();
-	const body = await req.json();
+	const auth = getAuthUser();
+	if (!auth?.id) return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
+	if (auth.role !== 'landlord') return NextResponse.json({ success: false, message: 'Forbidden' }, { status: 403 });
 
-	const item = {
-		id: `p_${Date.now()}`,
-		title: String(body?.title ?? 'New Property'),
-		description: String(body?.description ?? ''),
-		priceMonthly: Number(body?.priceMonthly ?? body?.price ?? 0),
-		city: String(body?.city ?? 'Lahore'),
-		area: String(body?.area ?? 'Unknown'),
-		address: String(body?.address ?? body?.location ?? ''),
-		bedrooms: Number(body?.bedrooms ?? 1),
-		bathrooms: Number(body?.bathrooms ?? 1),
-		propertyType: (body?.propertyType ?? 'Apartment') as 'House' | 'Apartment' | 'Portion' | 'Office',
-		images: Array.isArray(body?.images) ? body.images : [],
-		landlordId: String(body?.landlordId ?? 'u_landlord_1'),
-		status: 'pending' as const,
-		isVerified: false,
-		createdAt: new Date().toISOString(),
-	};
+	await connectDB();
+	const body: any = await req.json();
+	const title = String(body?.title ?? '').trim();
+	const city = String(body?.city ?? '').trim();
+	const description = String(body?.description ?? '').trim();
+	const priceMonthly = Number(body?.priceMonthly ?? body?.price ?? 0);
+	const images = Array.isArray(body?.images) ? body.images.map(String) : [];
 
-	store.properties.unshift(item);
-	return NextResponse.json({ success: true, item });
+	if (!title) return NextResponse.json({ success: false, message: 'Missing field: title' }, { status: 400 });
+	if (!city) return NextResponse.json({ success: false, message: 'Missing field: city' }, { status: 400 });
+	if (!description) return NextResponse.json({ success: false, message: 'Missing field: description' }, { status: 400 });
+	if (!Number.isFinite(priceMonthly) || priceMonthly <= 0)
+		return NextResponse.json({ success: false, message: 'Invalid field: priceMonthly' }, { status: 400 });
+
+	const item: any = await PropertyModel.create({
+		title,
+		city,
+		description,
+		priceMonthly,
+		images,
+		ownerId: auth.id,
+		verificationStatus: 'pending',
+	});
+
+	return NextResponse.json({ success: true, item: { ...item.toObject(), id: String(item._id) } });
 }
 
 export async function PATCH(req: Request) {
-	const store = getStore();
-	const body = await req.json();
-	const id = String(body?.id ?? '');
-	const idx = store.properties.findIndex((p) => p.id === id);
-	if (idx === -1) return NextResponse.json({ success: false, message: 'Not found' }, { status: 404 });
+	const auth = getAuthUser();
+	if (!auth?.id) return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
 
-	store.properties[idx] = { ...store.properties[idx], ...body };
-	return NextResponse.json({ success: true, item: store.properties[idx] });
+	await connectDB();
+	const body: any = await req.json();
+	const id = String(body?.id ?? '').trim();
+	if (!id) return NextResponse.json({ success: false, message: 'Missing field: id' }, { status: 400 });
+
+	const found: any = await PropertyModel.findById(id);
+	if (!found) return NextResponse.json({ success: false, message: 'Not found' }, { status: 404 });
+
+	const isOwner = String(found.ownerId) === auth.id;
+	if (!isOwner && auth.role !== 'admin') return NextResponse.json({ success: false, message: 'Forbidden' }, { status: 403 });
+
+	const allowed: any = {};
+	if (typeof body.title === 'string') allowed.title = body.title;
+	if (typeof body.city === 'string') allowed.city = body.city;
+	if (typeof body.description === 'string') allowed.description = body.description;
+	if (body.priceMonthly != null) allowed.priceMonthly = Number(body.priceMonthly);
+	if (Array.isArray(body.images)) allowed.images = body.images.map(String);
+
+	Object.assign(found, allowed);
+	await found.save();
+	return NextResponse.json({ success: true, item: { ...found.toObject(), id: String(found._id) } });
 }

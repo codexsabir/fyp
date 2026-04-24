@@ -14,6 +14,8 @@ type Role = 'tenant' | 'landlord';
 
 type Step = 1 | 2 | 3;
 
+type UploadResult = { success: boolean; url?: string; path?: string; message?: string };
+
 function RoleCard({
 	role,
 	selected,
@@ -50,8 +52,8 @@ export default function SignupPage() {
 
 	const [name, setName] = useState('');
 	const [cnic, setCnic] = useState('');
-	const [cnicFrontUrl, setCnicFrontUrl] = useState('');
-	const [cnicBackUrl, setCnicBackUrl] = useState('');
+	const [cnicFrontPath, setCnicFrontPath] = useState('');
+	const [cnicBackPath, setCnicBackPath] = useState('');
 
 	const [email, setEmail] = useState('');
 	const [password, setPassword] = useState('');
@@ -61,14 +63,12 @@ export default function SignupPage() {
 
 	const cnicValid = useMemo(() => CNIC_RE.test(cnic), [cnic]);
 
-	async function mockUpload(kind: 'front' | 'back') {
-		const r = await fetch('/api/upload', {
-			method: 'POST',
-			headers: { 'content-type': 'application/json' },
-			body: JSON.stringify({ category: kind === 'front' ? 'cnic_front' : 'cnic_back', name: `CNIC ${kind}` }),
-		}).then((x) => x.json());
-		if (kind === 'front') setCnicFrontUrl(r.url);
-		else setCnicBackUrl(r.url);
+	async function upload(file: File, category: 'cnic_front' | 'cnic_back'): Promise<UploadResult> {
+		const fd = new FormData();
+		fd.set('category', category);
+		fd.set('file', file);
+		const res = await fetch('/api/upload', { method: 'POST', body: fd });
+		return (await res.json()) as UploadResult;
 	}
 
 	async function submit() {
@@ -82,8 +82,8 @@ export default function SignupPage() {
 					role,
 					name,
 					cnic,
-					cnicFrontUrl,
-					cnicBackUrl,
+					cnicFrontPath,
+					cnicBackPath,
 					email,
 					password,
 				}),
@@ -102,7 +102,7 @@ export default function SignupPage() {
 
 	return (
 		<PageShell>
-			<Section title="Create your account" description="Step-based signup with CNIC onboarding (mock uploads).">
+			<Section title="Create your account" description="Three-step signup with CNIC upload.">
 				<div className="mx-auto max-w-xl rounded-2xl border bg-white p-5">
 					<div className="text-xs font-semibold text-slate-500">Step {step} / 3</div>
 
@@ -111,14 +111,14 @@ export default function SignupPage() {
 							<RoleCard
 								role="tenant"
 								title="Tenant"
-								desc="Find verified rentals and book safely."
+								desc="Browse verified listings and pay securely."
 								selected={role === 'tenant'}
 								onClick={() => setRole('tenant')}
 							/>
 							<RoleCard
 								role="landlord"
 								title="Landlord"
-								desc="List properties and manage inquiries."
+								desc="List properties and manage tenants."
 								selected={role === 'landlord'}
 								onClick={() => setRole('landlord')}
 							/>
@@ -134,19 +134,49 @@ export default function SignupPage() {
 						<div className="mt-4 grid gap-3">
 							<Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Full name" />
 							<Input value={cnic} onChange={(e) => setCnic(e.target.value)} placeholder="35202-1234567-1" />
-							<div className="grid gap-2 sm:grid-cols-2">
-								<Button variant="secondary" onClick={() => mockUpload('front')}>
-									{cnicFrontUrl ? 'CNIC front uploaded' : 'Mock upload CNIC front'}
-								</Button>
-								<Button variant="secondary" onClick={() => mockUpload('back')}>
-									{cnicBackUrl ? 'CNIC back uploaded' : 'Mock upload CNIC back'}
-								</Button>
+
+							<div className="grid gap-3 md:grid-cols-2">
+								<div>
+									<div className="text-xs font-semibold text-slate-700">CNIC front</div>
+									<input
+										type="file"
+										accept="image/*"
+										className="mt-2 block w-full text-xs"
+										onChange={async (e) => {
+											const f = e.target.files?.[0];
+											if (!f) return;
+											const r = await upload(f, 'cnic_front');
+											if (r?.path) setCnicFrontPath(r.path);
+										}}
+									/>
+									<div className="mt-1 text-[11px] text-slate-500 truncate">{cnicFrontPath || 'No file selected'}</div>
+								</div>
+								<div>
+									<div className="text-xs font-semibold text-slate-700">CNIC back</div>
+									<input
+										type="file"
+										accept="image/*"
+										className="mt-2 block w-full text-xs"
+										onChange={async (e) => {
+											const f = e.target.files?.[0];
+											if (!f) return;
+											const r = await upload(f, 'cnic_back');
+											if (r?.path) setCnicBackPath(r.path);
+										}}
+									/>
+									<div className="mt-1 text-[11px] text-slate-500 truncate">{cnicBackPath || 'No file selected'}</div>
+								</div>
 							</div>
+
 							<div className="flex gap-2">
 								<Button variant="ghost" onClick={() => setStep(1)}>
 									Back
 								</Button>
-								<Button className="flex-1" onClick={() => setStep(3)} disabled={!name.trim() || !cnicValid}>
+								<Button
+									className="flex-1"
+									onClick={() => setStep(3)}
+									disabled={!name.trim() || !cnicValid || !cnicFrontPath || !cnicBackPath}
+								>
 									Continue
 								</Button>
 							</div>

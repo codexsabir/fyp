@@ -2,11 +2,15 @@ import mongoose, { Schema } from 'mongoose';
 
 const PaymentSchema = new Schema(
 	{
-		bookingId: { type: Schema.Types.ObjectId, ref: 'Booking', required: true },
+		userId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+		propertyId: { type: Schema.Types.ObjectId, ref: 'Property', required: true },
 		amount: { type: Number, required: true },
-		status: { type: String, enum: ['pending', 'success'], default: 'success' },
+		method: { type: String, enum: ['JazzCash', 'Easypaisa'], required: true },
+		status: { type: String, enum: ['completed', 'failed'], default: 'completed' },
+		transactionId: { type: String, required: true },
 	},
 	{ timestamps: true }
 );
 
-export const Payment = mongoose.models.Payment || mongoose.model('Payment', PaymentSchema);
+const PaymentModel = (mongoose.models.Payment as mongoose.Model<any>) || mongoose.model('Payment', PaymentSchema);
+export default PaymentModel;

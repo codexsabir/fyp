@@ -1,18 +1,22 @@
 import mongoose, { Schema } from 'mongoose';
 
-export type PropertyStatus = 'pending' | 'approved' | 'rejected';
+export type VerificationStatus = 'pending' | 'verified' | 'rejected';
 
 const PropertySchema = new Schema(
 	{
 		title: { type: String, required: true, trim: true },
+		city: { type: String, required: true, trim: true },
+		priceMonthly: { type: Number, required: true },
 		description: { type: String, required: true },
-		price: { type: Number, required: true },
-		location: { type: String, required: true },
 		images: [{ type: String }],
-		landlordId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
-		status: { type: String, enum: ['pending', 'approved', 'rejected'], default: 'pending' },
+		ownerId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+		verificationStatus: { type: String, enum: ['pending', 'verified', 'rejected'], default: 'pending' },
+		rating: { type: Number },
+		verificationCode: { type: String },
+		verificationDocs: [{ type: String }],
 	},
 	{ timestamps: true }
 );
 
-export const Property = mongoose.models.Property || mongoose.model('Property', PropertySchema);
+const PropertyModel = (mongoose.models.Property as mongoose.Model<any>) || mongoose.model('Property', PropertySchema);
+export default PropertyModel;
