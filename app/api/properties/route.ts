@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getStore } from '@/lib/store';
+import { getAuthUser } from '@/app/api/auth/_auth';
 
 export async function GET(req: Request) {
 	const store = getStore();
@@ -21,13 +22,17 @@ export async function GET(req: Request) {
 			[p.title, p.description, p.area, p.city, p.address].some((x) => String(x).toLowerCase().includes(q))
 		);
 	}
-	if (city) items = items.filter((p) => p.city.toLowerCase() === city);
-	if (status) items = items.filter((p) => p.status.toLowerCase() === status);
+	if (city) items = items.filter((p) => String(p.city).toLowerCase() === city);
+	if (status) items = items.filter((p) => String(p.status).toLowerCase() === status);
 
 	return NextResponse.json({ items });
 }
 
 export async function POST(req: Request) {
+	const auth = await getAuthUser();
+	if (!auth?.id) return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
+	if (auth.role !== 'landlord') return NextResponse.json({ success: false, message: 'Forbidden' }, { status: 403 });
+
 	const store = getStore();
 	const body = await req.json();
 
@@ -43,7 +48,8 @@ export async function POST(req: Request) {
 		bathrooms: Number(body?.bathrooms ?? 1),
 		propertyType: (body?.propertyType ?? 'Apartment') as 'House' | 'Apartment' | 'Portion' | 'Office',
 		images: Array.isArray(body?.images) ? body.images : [],
-		landlordId: String(body?.landlordId ?? 'u_landlord_1'),
+		verificationDocs: Array.isArray(body?.verificationDocs) ? body.verificationDocs : [],
+		landlordId: auth.id,
 		status: 'pending' as const,
 		isVerified: false,
 		createdAt: new Date().toISOString(),
@@ -54,12 +60,19 @@ export async function POST(req: Request) {
 }
 
 export async function PATCH(req: Request) {
+	const auth = await getAuthUser();
+	if (!auth?.id) return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
+
 	const store = getStore();
 	const body = await req.json();
 	const id = String(body?.id ?? '');
 	const idx = store.properties.findIndex((p) => p.id === id);
 	if (idx === -1) return NextResponse.json({ success: false, message: 'Not found' }, { status: 404 });
 
-	store.properties[idx] = { ...store.properties[idx], ...body };
+	const p: any = store.properties[idx];
+	const isOwner = String(p.landlordId) === auth.id;
+	if (!isOwner && auth.role !== 'admin') return NextResponse.json({ success: false, message: 'Forbidden' }, { status: 403 });
+
+	store.properties[idx] = { ...store.properties[idx], ...body, id };
 	return NextResponse.json({ success: true, item: store.properties[idx] });
 }
